@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pdfchat_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pdfchat
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: pdfchat_api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pdfchat
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["uv", "run", "python", "main.py"]
+
+  # Test service - runs tests in isolation
+  test:
+    build: .
+    container_name: pdfchat_test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pdfchat_test
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["test"]
+    command: ["uv", "run", "python", "run_tests.py", "--coverage"]
+
+volumes:
+  postgres_data:
