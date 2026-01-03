@@ -34,7 +34,7 @@ test: check ## Run full test suite (check -> unit -> integration)
 	$(MAKE) test-integration
 	@echo "${GREEN}🎉 All tests passed!${NC}"
 
-ci: ## Complete CI workflow (install -> check-strict -> test)
+ci: ## Complete CI workflow (install -> check-strict -> test -> e2e)
 	@echo "${YELLOW}🚀 Running CI workflow...${NC}"
 	$(MAKE) install
 	@echo "${YELLOW}🔍 Running all checks and tests in single container...${NC}"
@@ -49,13 +49,22 @@ ci: ## Complete CI workflow (install -> check-strict -> test)
 		uv run pytest tests/unit/ && \
 		echo '🧪 Running integration tests...' && \
 		uv run pytest tests/integration/"
+	@echo "${YELLOW}🚀 Starting services for e2e tests...${NC}"
+	docker compose up -d
+	@echo "${YELLOW}⏳ Waiting for services to be ready...${NC}"
+	sleep 15
+	@echo "${YELLOW}🔍 Checking API health...${NC}"
+	timeout 30 bash -c 'until curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; do sleep 2; done' || (echo "API failed to start" && docker compose logs api && docker compose down && exit 1)
+	@echo "${YELLOW}🧪 Running end-to-end tests...${NC}"
+	$(MAKE) test-e2e || (docker compose down && exit 1)
+	docker compose down
 	@echo "${GREEN}🎊 CI workflow completed successfully!${NC}"
 
 # === DEVELOPMENT COMMANDS ===
 
 dev: ## Start development environment
 	@echo "${YELLOW}🚀 Starting development environment...${NC}"
-	docker compose up
+	docker compose up 2>&1 | tee server.log
 	@echo "${GREEN}📍 API available at: http://localhost:8000${NC}"
 
 dev-bg: ## Start development environment in background
@@ -103,6 +112,10 @@ test-unit: ## Run unit tests only
 test-integration: ## Run integration tests only  
 	@echo "${YELLOW}🧪 Running integration tests...${NC}"
 	docker compose --profile test run --rm test uv run pytest tests/integration/
+
+test-e2e: ## Run end-to-end tests only
+	@echo "${YELLOW}🧪 Running end-to-end tests...${NC}"
+	PYTHONPATH=. uv run pytest tests/e2e/ -v --no-cov
 
 test-watch: ## Run tests in watch mode
 	@echo "${YELLOW}👀 Running tests in watch mode...${NC}"

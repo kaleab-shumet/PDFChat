@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, status, Request
 from fastapi.security import HTTPBearer
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from ..models.user import User
 from ..schemas.auth import UserCreate, UserLogin, UserResponse
 from ..schemas.response import (
     success_response,
+    error_response,
     user_exists_error,
     invalid_credentials_error,
     user_inactive_error,
@@ -106,18 +107,33 @@ async def login(
     )
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_current_user(
-    db: AsyncSession = Depends(get_db), token: str = Depends(security)
-):
+@router.get("/me")
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     """Get current user information."""
-    # This endpoint requires authentication via middleware
-    # The user_id will be available in request.state.user_id
-    # For now, we'll implement a simple version
+    # Get user ID from auth middleware
+    user_id = request.state.user_id
+    request_id = getattr(request.state, "request_id", None)
 
-    # This is a placeholder - in real implementation, we'd get user_id from request.state
-    # after the auth middleware processes the token
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Endpoint not fully implemented yet",
+    # Fetch user from database
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=error_response("USER_NOT_FOUND", "User not found", request_id),
+        )
+
+    # Convert to response model
+    user_response = UserResponse(
+        id=str(user.id),
+        email=user.email,
+        is_active=user.is_active,
+        created_at=user.created_at,
+    )
+
+    return success_response(
+        data=user_response.model_dump(),
+        message="User information retrieved successfully",
+        request_id=request_id,
     )

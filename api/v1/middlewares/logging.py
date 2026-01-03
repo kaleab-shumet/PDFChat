@@ -12,7 +12,8 @@ def setup_logging_middleware(app: FastAPI) -> None:
         request_id = str(uuid.uuid4())
         start_time = time.time()
 
-        # Add request ID to context
+        # Add request ID to request state and logging context
+        request.state.request_id = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
